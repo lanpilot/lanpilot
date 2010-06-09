@@ -1,0 +1,120 @@
+#!/bin/bash
+
+HOST=lanpilot
+AUTH_COOKIE=auth_cookie
+USER=user1
+PASSWORD=password
+CONNECTION_TIMEOUT=3
+
+
+CURL_BASE_COMMAND="curl -m $CONNECTION_TIMEOUT -s -b $AUTH_COOKIE "
+BASE_URL="http://$HOST"
+
+
+curl-error()
+{
+	echo	
+	echo " ****** Problems with connection to host $HOST ******"
+	echo
+	echo "curl reports error code $1"
+	exit $1
+}
+
+# *************** PROCEDURES USED FOR SIGING IN *************** #
+is-signed-in()
+{
+	OUTPUT=$($CURL_BASE_COMMAND $BASE_URL)
+	STATUS=$?
+	if [ "$STATUS" != "0" ]; then
+		curl-error $STATUS
+	fi
+	OUTPUT=$(echo "$OUTPUT" | grep "Signed in as $USER" | wc -l)
+	if [ "$OUTPUT" != "0" ]; then
+		# signed in
+		return 0
+	fi
+	# not signed in
+	return 255
+}
+
+
+sign-in()
+{
+	$CURL_BASE_COMMAND -c "$AUTH_COOKIE" $BASE_URL"/auth/cookie/?l=$USER&p=$PASSWORD" &> /dev/null
+	STATUS=$?
+	if [ "$STATUS" != "0" ]; then
+		curl-error $STATUS
+	fi
+	# now we check if everything went okay
+	is-signed-in
+	return $?
+}
+
+ensure-user-is-signed-in()
+{
+	is-signed-in
+
+	IS_SIGNED_IN=$?
+
+	if [ "$IS_SIGNED_IN" != "0" ]; then
+	
+		echo -n "User not signed in, attempting to sign in as $USER ... "
+		sign-in
+	
+		IS_SIGNED_IN=$?
+	
+		if [ "$IS_SIGNED_IN" != 0 ]; then
+			echo
+			echo
+			echo " ****** Problems with signing in, check username and password ******"
+			echo
+			exit "$IS_SIGNED_IN"
+		fi
+		echo successful.
+	fi
+}
+
+
+
+
+# ********************** MAIN CODE ********************** #
+
+if [ "x$1" == "x" ]; then
+	echo "Usage: $0 [message_to_send]"
+	exit 1
+fi;
+
+ensure-user-is-signed-in
+
+
+echo -n "Attempting to send ... " #\"$1\" ... "
+
+OUTPUT=$($CURL_BASE_COMMAND $BASE_URL"/ir/send/$1")
+STATUS=$?
+if [ "$STATUS" != "0" ]; then
+	curl-error $STATUS
+fi
+
+OUTPUT=$(echo $OUTPUT | grep "Sent successfully" | wc -l)
+
+if [ "$OUTPUT" == "0" ]; then
+	# there was no "Sent successfully" message
+	echo
+	echo
+	echo " ****** Problems with sending message.****** "
+	echo
+	echo "Check it's syntax correctness. Message format:"
+	echo 
+	echo "   [frequency]_[bit_0_length]_[bit_1_length]_[bit_2_length]_ ... _[bit_n-th_length]"
+	echo
+	echo " o frequency                - in kilohertz"
+	echo " o length of each bit       - in units of 1/frequency"
+	echo 
+	echo "Bits with even numbers are ones (carrier is produced),"
+	echo "bits with odd numbers are zeros (no carrier is produced)."
+	echo "All numbers must be positive and <= 2^16 ( = 65536)"
+	echo 
+	exit 255
+fi
+
+echo successful.

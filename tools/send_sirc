@@ -1,0 +1,11 @@
+#!/bin/bash
+
+
+SIRC_CODE=$(./sirc_generator "$1" "$2")
+STATUS=$?
+if [ "$STATUS" != "0" ]; then
+	exit $STATUS
+fi
+
+
+./send_message "$SIRC_CODE"
